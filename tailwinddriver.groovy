@@ -20,7 +20,6 @@ metadata {
         importUrl: "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver.groovy"
     ) {
         capability "Polling"
-        attribute "Status", "string"
         command "childOpen", ["integer"]
         command "childClose", ["integer"]
         command "reboot"
@@ -46,8 +45,6 @@ def updated() {
 def init() {
     log.info "Scheduling Polling interval for ${settings.interval} minute(s)..."
     addChildren()
-    sendEvent(name: "Status", value: "")
-
     // Set DNI to hex-encoded IP so the hub routes inbound LAN notifications to this driver
     def hexIP = getHexIP(IP)
     if (device.deviceNetworkId != hexIP) {
@@ -228,12 +225,6 @@ def checkStatus() {
 }
 
 void setDoorStatus(List statuses){
-    def statusStr = statuses.join(",")
-    def old = device.currentValue("Status") ?: ""
-    if (statusStr != old) {
-        if(debugEnable) log.debug "Status changed from ${old} to ${statusStr}"
-        sendEvent(name: "Status", value: statusStr)
-    }
     for (int i = 0; i < statuses.size(); i++) {
         def doorNum = i + 1
         if(debugEnable) log.debug "Door ${doorNum} is ${statuses[i]}"

@@ -9,7 +9,6 @@ metadata {
         capability "Actuator"
         capability "ContactSensor"
         capability "Sensor"
-        attribute "Status", "string"
         command "open"
         command "close"
     }
