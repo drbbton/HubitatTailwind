@@ -111,7 +111,7 @@ void addChildren(){
         if(debugEnable) log.debug ("${cName}:${d}")
         def cd = getChildDevice("${cName}:${d}")
         if(!cd) {
-            cd = addChildDevice("drbbton","Tailwind Garage Door Child Device","${cName}:${d}", [label: "${cName} : ${dn}", name: "${d}", isComponent: true])
+            cd = addChildDevice("drbbton","Hubitat Tailwind Garage Door 2.0 - Child","${cName}:${d}", [label: "${cName} : ${dn}", name: "${d}", isComponent: true])
             if(cd && debugEnable){
                 if(debugEnable) log.debug "Child device ${cd.displayName} was created"
             }else if (!cd){

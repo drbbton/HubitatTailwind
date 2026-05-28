@@ -1,6 +1,6 @@
 metadata {
     definition (
-        name: "Tailwind Garage Door Child Device", 
+        name: "Hubitat Tailwind Garage Door 2.0 - Child",
 		namespace: "drbbton",
 		author: "drbbton",
         importUrl: "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver-child.groovy"
