@@ -85,12 +85,8 @@ def parse(String description) {
         def s = data?."door${i+1}"?.status ?: "unknown"
         statuses << (s == "close" ? "closed" : s)
     }
-    def statusStr = statuses.join(",")
-    def old = device.currentValue("Status") ?: ""
-    if (statusStr != old) {
-        if(debugEnable) log.debug "Notification: status changed from ${old} to ${statusStr}"
-        setDoorStatus(statuses)
-    }
+    if(debugEnable) log.debug "Notification: statuses = ${statuses}"
+    setDoorStatus(statuses)
 }
 
 void addChildren(){
@@ -138,12 +134,8 @@ void addChildren(){
 def poll() {
     def statuses = checkStatus()
     if (statuses == null) return
-    def statusStr = statuses.join(",")
-    def old = device.currentValue("Status") ?: ""
-    if (statusStr != old) {
-        if(debugEnable) log.debug "Poll: status changed from ${old} to ${statusStr}"
-        setDoorStatus(statuses)
-    }
+    if(debugEnable) log.debug "Poll: statuses = ${statuses}"
+    setDoorStatus(statuses)
 }
 
 def openClose(String command, Integer doorNumber){
@@ -229,8 +221,11 @@ def checkStatus() {
 
 void setDoorStatus(List statuses){
     def statusStr = statuses.join(",")
-    if(debugEnable) log.debug "Setting Door Status attribute to ${statusStr}"
-    sendEvent(name: "Status", value: statusStr)
+    def old = device.currentValue("Status") ?: ""
+    if (statusStr != old) {
+        if(debugEnable) log.debug "Status changed from ${old} to ${statusStr}"
+        sendEvent(name: "Status", value: statusStr)
+    }
     for (int i = 0; i < statuses.size(); i++) {
         def doorNum = i + 1
         if(debugEnable) log.debug "Door ${doorNum} is ${statuses[i]}"
