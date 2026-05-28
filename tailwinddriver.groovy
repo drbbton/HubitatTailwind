@@ -176,12 +176,20 @@ void postActionRefresh(data){
     def List statuses = null
 
     while (true) {
-        statuses = checkStatus()
-        def currentStatus = (statuses != null && doorNumber <= statuses.size()) ? statuses[doorNumber - 1] : null
+        // Check child state first — notification may have already updated it
+        def currentStatus = getChildDevice("${cName}:${doorNumber}")?.latestValue("door")
         if(debugEnable) log.debug "Door #${doorNumber} Desired: ${desiredStatus} Current: ${currentStatus}"
         if (currentStatus == desiredStatus) {
+            log.info "Door #${doorNumber} successfully ${desiredStatus} (via notification)"
+            break
+        }
+        // Notification hasn't arrived yet — poll the device directly
+        statuses = checkStatus()
+        currentStatus = (statuses != null && doorNumber <= statuses.size()) ? statuses[doorNumber - 1] : null
+        if(debugEnable) log.debug "Door #${doorNumber} Desired: ${desiredStatus} Polled: ${currentStatus}"
+        if (currentStatus == desiredStatus) {
             setDoorStatus(statuses)
-            log.info "Door #${doorNumber} successfully ${desiredStatus}"
+            log.info "Door #${doorNumber} successfully ${desiredStatus} (via poll)"
             break
         }
         pauseExecution(loopSpeed * 1000)
