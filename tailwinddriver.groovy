@@ -3,7 +3,7 @@ preferences {
     input name: "cName", type: "string", title: "Tailwind Controller Name", required: "True",  description: '<em>Changes the name for the controller displayed in dashboards, DOES affect children unique deviceNetworkId.  Changing this will re-create the children devices.</em>'
     input name: "token", type: "password", title: "Local Command Key", required: "True", description: 'login with your tailwind app credentials to https://web.gotailwind.com/, go to Local Control Key, create a new local command key.  This is per-account and is the same for each device you may have on your account.'
     input name: "doorCount", type: "number", title: "Number of Doors", required: "True", range: "0..3", defaultValue : 1
-    input name: "interval", type: "enum", title: "Polling interval", required: "True", options: ["1", "5", "10", "15", "30"], defaultValue : 1, description: '<em> Main polling interval for when nothing is happening, this is in Minutes so as not to hog resources on the Hub. If you want it more frequently than 1 minute, you can use Rules.</em>'
+    input name: "interval", type: "enum", title: "Polling interval", required: "True", options: ["1", "5", "10", "15", "30"], defaultValue : 5, description: '<em> Fallback polling interval in Minutes. Notifications handle real-time updates; polling is a safety net.</em>'
     input name: "fastPollInterval", type: "number", title: "Fast Polling interval", required: "True", range: "1-30", defaultValue : 2, description: '<em>This polling interval is used when an action has been performed (such as open/close) and will update the status of the door triggered.</em>'
     input name: "garageDoorTimeout", type: "number", title: "Door Open/Close timeout", required: "True", defaultValue : 60, description: '<em> Seconds. How long should faster polling be run before giving up on waiting to check and see if the door status has changed after issuing a command.</em>'
     input name: "debugEnable", type: "bool", title: "Enable debug logging?", defaultValue: true,  description: '<em>for 2 hours</em>'
@@ -14,67 +14,94 @@ preferences {
 
 metadata {
     definition (
-        name: "Tailwind Garage Door", 
-		namespace: "dabtailwind-gd", 
-		author: "dbadge",
-        importUrl: "https://raw.githubusercontent.com/Gelix/HubitatTailwind/main/tailwinddriver.groovy"
+        name: "Hubitat Tailwind Garage Door 2.0",
+		namespace: "drbbton",
+		author: "drbbton",
+        importUrl: "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver.groovy"
     ) {
         capability "Polling"
         attribute "Status", "string"
         command "childOpen", ["integer"]
         command "childClose", ["integer"]
+        command "reboot"
     }
 }
 
 
 
 def installed() {
-    //log.info "Clearing schedule for Polling interval"
-    //unschedule()
-    //init()    
 }
 
 def uninstalled() {
     getChildDevices().each { deleteChildDevice("${it.deviceNetworkId}") }
 }
 
-def updated() {    
+def updated() {
     log.info "Clearing schedule for Polling interval"
     unschedule()
-    //disable logging after 2 hours
-    if (debugEnable) runIn(7200,disableDebug)
+    if (debugEnable) runIn(7200, disableDebug)
     init()
 }
 
 def init() {
-    log.info "Scheduling Polling interval for ${settings.interval} minute(s)..."    
+    log.info "Scheduling Polling interval for ${settings.interval} minute(s)..."
     addChildren()
-    sendEvent(name: "Status", value: 0)
-    //schedule("0/${settings.interval} * * ? * * *", poll)
+    sendEvent(name: "Status", value: "")
+
+    // Set DNI to hex-encoded IP so the hub routes inbound LAN notifications to this driver
+    def hexIP = getHexIP(IP)
+    if (device.deviceNetworkId != hexIP) {
+        if(debugEnable) log.debug "Updating DNI to ${hexIP}"
+        device.deviceNetworkId = hexIP
+    }
+
+    registerNotifyUrl()
+
     if (settings.interval == "1") runEvery1Minute(poll)
     else if (settings.interval == "5") runEvery5Minutes(poll)
     else if (settings.interval == "10") runEvery10Minutes(poll)
     else if (settings.interval == "15") runEvery15Minutes(poll)
     else if (settings.interval == "30") runEvery30Minutes(poll)
-    poll()    
+    poll()
 }
 
 def disableDebug(String level) {
-  log.info "Timed elapsed, disabling debug logging"
-  device.updateSetting("debugEnable", [value: 'false', type: 'bool'])
+    log.info "Timed elapsed, disabling debug logging"
+    device.updateSetting("debugEnable", [value: 'false', type: 'bool'])
+}
+
+// Receives push notifications from the Tailwind device
+def parse(String description) {
+    def msg = parseLanMessage(description)
+    if (!msg?.body) return
+    def body = parseJson(msg.body)
+    if(debugEnable) log.debug "Notification received: ${body}"
+    if (!body?.notify) return
+    def data = body?.data
+    if (!data) return
+    def statuses = []
+    int dc = doorCount.toString().toInteger()
+    for (int i = 0; i < dc; i++) {
+        def s = data?."door${i+1}"?.status ?: "unknown"
+        statuses << (s == "close" ? "closed" : s)
+    }
+    def statusStr = statuses.join(",")
+    def old = device.currentValue("Status") ?: ""
+    if (statusStr != old) {
+        if(debugEnable) log.debug "Notification: status changed from ${old} to ${statusStr}"
+        setDoorStatus(statuses)
+    }
 }
 
 void addChildren(){
     int dc = doorCount.toString().toInteger()
-    //Cleanup any children that are no longer needed due to doorCount change or name mismatch
-    getChildDevices().each {       
-        spl = it.deviceNetworkId.split(':')       
+    getChildDevices().each {
+        spl = it.deviceNetworkId.split(':')
         if(spl[0] != cName  || spl[1].toInteger() > dc){
             if(debugEnable) log.debug  "delete ${it.deviceNetworkId}"
             deleteChildDevice("${it.deviceNetworkId}")
-            }
-    } 
-    //loop through up to doorCount to create children
+        }
+    }
     for (int c = 0; c < dc; c++) {
         def d = c + 1
         def dn=""
@@ -84,59 +111,61 @@ void addChildren(){
         if(debugEnable) log.debug ("${cName}:${d}")
         def cd = getChildDevice("${cName}:${d}")
         if(!cd) {
-            cd = addChildDevice("dabtailwind-gd","Tailwind Garage Door Child Device","${cName}:${d}", [label: "${cName} : ${dn}", name: "${d}", isComponent: true])         
+            cd = addChildDevice("drbbton","Tailwind Garage Door Child Device","${cName}:${d}", [label: "${cName} : ${dn}", name: "${d}", isComponent: true])
             if(cd && debugEnable){
-                  if(debugEnable) log.debug "Child device ${cd.displayName} was created" 
-
+                if(debugEnable) log.debug "Child device ${cd.displayName} was created"
             }else if (!cd){
                 log.error "Could not create child device"
             }
         }
-        if(debugEnable) log.debug "deviceNetworkId ${cd.deviceNetworkId}=${cName}:${d} name ${cd.name}=${d} label ${cd.label}=${cName} : ${dn}"        
-        if(cd.label != "${cName} : ${dn}")
-        {
-              if(debugEnable) log.debug "Correcting child label mismatch ${cd.label}=${cName} : ${dn}"
+        if(debugEnable) log.debug "deviceNetworkId ${cd.deviceNetworkId}=${cName}:${d} name ${cd.name}=${d} label ${cd.label}=${cName} : ${dn}"
+        if(cd.label != "${cName} : ${dn}"){
+            if(debugEnable) log.debug "Correcting child label mismatch ${cd.label}=${cName} : ${dn}"
             cd.label = "${cName} : ${dn}"
         }
-        if(cd.name != "${d}")
-        {
-              if(debugEnable) log.debug "Correcting child name mismatch ${cd.name}=${d}"
+        if(cd.name != "${d}"){
+            if(debugEnable) log.debug "Correcting child name mismatch ${cd.name}=${d}"
             cd.name = "${d}"
         }
     }
-    
 }
 
 def poll() {
-    def s = checkStatus()
-    def old = device.currentValue("Status").toInteger()
-    //only set status if it changed. a lot less event spam this way.
-    if(s != old)
-    {
-        if(debugEnable) log.debug "Status changed from ${old} to ${s}"
-        setDoorStatus(s)
+    def statuses = checkStatus()
+    if (statuses == null) return
+    def statusStr = statuses.join(",")
+    def old = device.currentValue("Status") ?: ""
+    if (statusStr != old) {
+        if(debugEnable) log.debug "Poll: status changed from ${old} to ${statusStr}"
+        setDoorStatus(statuses)
     }
 }
 
 def openClose(String command, Integer doorNumber){
-    def desiredStatus = "closed"
-    def Integer cmd = doorNumber * -1
-    if(doorNumber == 3) cmd = cmd - 1 //assuming documentation is correct on -4 and 4 for door #3, another user reported this being 3, but mine still seems to be 4.
-    if(command == "open")
-    {
-        desiredStatus = "open"
-        cmd = cmd * -1
-    }
     log.info "Attempting to ${command} door ${doorNumber}"
-    def postParams = [uri: "http://${IP}/cmd", body : "${cmd}", headers: ['TOKEN' : "${token}"]]     
+    def postParams = [
+        uri: "http://${IP}/json",
+        headers: ['TOKEN': "${token}"],
+        body: [
+            product: "iQ3",
+            version: "0.1",
+            data: [
+                type: "set",
+                name: "door_op",
+                value: [
+                    door_idx: doorNumber - 1,
+                    cmd: command
+                ]
+            ]
+        ]
+    ]
     if(debugEnable) log.debug postParams
-    httpPost(postParams) { def resp ->
-        if(debugEnable) log.debug "${command} Response (should match ${cmd}): ${resp.data}"     
-        if ("${resp.data}" != "${cmd}" )
-        {
-            if(debugEnable) log.debug "in 1 second, start polling every ${fastPollInterval} seconds for door to ${desiredStatus}."
-            //schedule to run the refresh for rapid updates on dashboard
-            runIn(1, "postActionRefresh", [data:["desiredStatus":"${desiredStatus}","doorNumber":doorNumber]])
+    httpPostJson(postParams) { resp ->
+        if(debugEnable) log.debug "${command} response: ${resp.data}"
+        if (resp.data?.result == "OK") {
+            runIn(1, "postActionRefresh", [data: ["desiredStatus": command, "doorNumber": doorNumber]])
+        } else {
+            log.warn "Command '${command}' on door ${doorNumber} did not return OK: ${resp.data}"
         }
     }
 }
@@ -144,118 +173,133 @@ def openClose(String command, Integer doorNumber){
 void postActionRefresh(data){
     def Integer loopSpeed = fastPollInterval
     String desiredStatus = data.get("desiredStatus")
-    def Integer doorStatus = checkStatus()
     Integer doorNumber = data.get("doorNumber").toInteger()
-    if(debugEnable) log.debug "Now polling every ${loopSpeed} seconds for door to ${desiredStatus}."
-    if(debugEnable) log.debug "${doorStatus} Door #${doorNumber} Desired Status: ${desiredStatus} Current status: ${doorCheck(doorNumber,doorStatus)}"
-    def Integer i = 0 //count seconds elapsed after door command
-    
-    while ( doorCheck(doorNumber, doorStatus) != desiredStatus){                
-        doorStatus = checkStatus()
-        if(debugEnable) log.debug "Door #${doorNumber} Desired Status: ${desiredStatus} Current status: ${doorCheck(doorNumber,doorStatus)}"
+    if(debugEnable) log.debug "Now polling every ${loopSpeed} seconds for door ${doorNumber} to ${desiredStatus}."
+    def Integer i = 0
+    def List statuses = null
+
+    while (true) {
+        statuses = checkStatus()
+        def currentStatus = (statuses != null && doorNumber <= statuses.size()) ? statuses[doorNumber - 1] : null
+        if(debugEnable) log.debug "Door #${doorNumber} Desired: ${desiredStatus} Current: ${currentStatus}"
+        if (currentStatus == desiredStatus) {
+            setDoorStatus(statuses)
+            log.info "Door #${doorNumber} successfully ${desiredStatus}"
+            break
+        }
         pauseExecution(loopSpeed * 1000)
-        //break out of loop after a period, infinite loops are bad
         i += loopSpeed
-        if(i >= garageDoorTimeout)
-        {
-            log.warn "${garageDoorTimeout} seconds is too long for a door, probably something went wrong physically (blocked sensor, stuck/etc)."
+        if (i >= garageDoorTimeout) {
+            log.warn "${garageDoorTimeout} seconds elapsed waiting for door ${doorNumber} to ${desiredStatus}, may be stuck."
+            if (statuses != null) setDoorStatus(statuses)
             break
         }
     }
-    if (doorCheck(doorNumber, doorStatus) == desiredStatus){
-        setDoorStatus(doorStatus)
-        log.info "Completed ${desiredStatus} Successfully on Door #${doorNumber} Desired Status: ${desiredStatus} Current status: ${doorCheck(doorNumber,doorStatus)}"          
-    }
-    else
-    {
-        log.warn "Failed to ${desiredStatus} on Door #${doorNumber} Desired Status: ${desiredStatus} Current status: ${doorCheck(doorNumber,doorStatus)}"
-    }
-    
-    
-    
-    
 }
 
-def doorCheck(Integer doorNumber, Integer doorStatus){
-    checkNumber = doorNumber -1 //the statusCode is 0,1,2 so subtract 1 
-    r = getDoorOpenClose(getDoorStatus(doorStatus,checkNumber))
-    return r
-}
-
-def childOpen(Integer doorNumber){
-    open(doorNumber)
-}
-
-def childClose(Integer doorNumber){
-    close(doorNumber)
-}
-
-def open(Integer doorNumber) {
-    openClose("open",doorNumber)
-}
-
-def close(Integer doorNumber) {   
-   openClose("close",doorNumber)
-}
+def childOpen(Integer doorNumber){ open(doorNumber) }
+def childClose(Integer doorNumber){ close(doorNumber) }
+def open(Integer doorNumber) { openClose("open", doorNumber) }
+def close(Integer doorNumber) { openClose("close", doorNumber) }
 
 def checkStatus() {
-    def params = [uri : "http://${ IP }/status", headers: [ 'TOKEN' : "${token}"]]
-    httpGet(params)
-    {resp ->           
-        if(debugEnable) log.debug "POST Door Status: ${resp.data}"        
-        return resp.data.toInteger()
-	}
-    
+    def params = [
+        uri: "http://${IP}/json",
+        headers: ['TOKEN': "${token}"],
+        body: [version: "0.1", data: [type: "get", name: "dev_st"]]
+    ]
+    def doorStatuses = []
+    httpPostJson(params) { resp ->
+        if(debugEnable) log.debug "Status response: ${resp.data}"
+        def respData = resp.data?.data
+        int dc = doorCount.toString().toInteger()
+        for (int i = 0; i < dc; i++) {
+            def s = respData?."door${i+1}"?.status ?: "unknown"
+            // API returns "close", normalize to "closed" to match Hubitat conventions
+            doorStatuses << (s == "close" ? "closed" : s)
+        }
+    }
+    return doorStatuses ?: null
 }
 
-void setDoorStatus(status){
-    if(debugEnable) log.debug "Setting Door Status attribute to ${status}"
-    sendEvent(name: "Status", value: status)
-    for(int i =0; i < doorCount.toInteger(); i++){
-        ds = getDoorStatus(status,i)
-        dStatus = getDoorOpenClose(ds)
-        if(debugEnable) log.debug "Real door ${i+1} is ${ds} ${dStatus}"      
-        setChildStatus(i+1, dStatus)
-    }   
-}
-
-def getDoorStatus(Integer status, Integer door){
-        statusCodes=[
-          [-1, -2, -4],   //[closed,closed,closed]  
-          [1, -2, -4],    //[open,closed,closed] 
-          [-1, 2, -4],    //[closed,open,closed] 
-          [1, 2, -4],     //[open,open,closed] 
-          [-1, -2, 4],    //[closed,closed,open] 
-          [1, -2, 4],     //[open,closed,open] 
-          [-1, 2, 4],     //[closed,open,open] 
-          [1, 2, 4]       //[open,open,open] 
-        ] 
-    return statusCodes[status][door]
+void setDoorStatus(List statuses){
+    def statusStr = statuses.join(",")
+    if(debugEnable) log.debug "Setting Door Status attribute to ${statusStr}"
+    sendEvent(name: "Status", value: statusStr)
+    for (int i = 0; i < statuses.size(); i++) {
+        def doorNum = i + 1
+        if(debugEnable) log.debug "Door ${doorNum} is ${statuses[i]}"
+        setChildStatus(doorNum, statuses[i])
+    }
 }
 
 void setChildStatus(dNum, status){
-    def cd = getChildDevice("${cName}:${dNum}")        
+    def cd = getChildDevice("${cName}:${dNum}")
     if(cd.latestValue("door") == status){
-        if(debugEnable) log.debug "Child device ${cName}:${dNum} Matches real door"
-    }
-    else{
-        if(debugEnable) log.debug "Child device ${cName}:${dNum} DOESN'T match real door, update child to match"
+        if(debugEnable) log.debug "Child device ${cName}:${dNum} matches real door"
+    } else {
+        if(debugEnable) log.debug "Child device ${cName}:${dNum} DOESN'T match real door, updating to ${status}"
         cd.sendEvent(name:"door", value:"${status}")
-    }    
+    }
     if (status ==~ /open|closed/ && cd.latestValue('contact') != status) {
         cd.sendEvent(name:'contact', value:"${status}")
     }
 }
 
-def getDoorOpenClose(Integer curStatus)
-{
-    if(curStatus < 0){
-        return "closed"
+def reboot() {
+    log.info "Sending reboot command to Tailwind device"
+    def postParams = [
+        uri: "http://${IP}/json",
+        headers: ['TOKEN': "${token}"],
+        body: [
+            product: "iQ3",
+            version: "0.1",
+            data: [
+                type: "set",
+                name: "reboot"
+            ]
+        ]
+    ]
+    httpPostJson(postParams) { resp ->
+        if(debugEnable) log.debug "Reboot response: ${resp.data}"
+        if (resp.data?.result == "OK") {
+            log.info "Tailwind reboot initiated — device will be back in ~2 seconds"
+        } else {
+            log.warn "Reboot command failed: ${resp.data}"
+        }
     }
-    else if (curStatus > 0){
-        return "open"
-    } 
-    else {
-        return "unknown"
+}
+
+private void registerNotifyUrl() {
+    def hubIP = location.hub.localIP
+    def notifyUrl = "http://${hubIP}:39501/"
+    log.info "Registering Tailwind notify URL: ${notifyUrl}"
+    def postParams = [
+        uri: "http://${IP}/json",
+        headers: ['TOKEN': "${token}"],
+        body: [
+            product: "iQ3",
+            version: "0.1",
+            data: [
+                type: "set",
+                name: "notify_url",
+                value: [
+                    url: notifyUrl,
+                    proto: "http",
+                    enable: 1
+                ]
+            ]
+        ]
+    ]
+    httpPostJson(postParams) { resp ->
+        if (resp.data?.result == "OK") {
+            log.info "Notify URL registered successfully"
+        } else {
+            log.warn "Failed to register notify URL: ${resp.data}"
+        }
     }
+}
+
+private String getHexIP(String ip) {
+    return ip.tokenize('.').collect { String.format('%02X', it.toInteger()) }.join()
 }

@@ -1,26 +1,26 @@
 {
-  "packageName": "Hubitat Tailwind Garage Door Controller",
-  "author": "dbadge",
-  "version": "1.0.6",
+  "packageName": "Hubitat Tailwind Garage Door 2.0",
+  "author": "drbbton",
+  "version": "2.0.0",
   "minimumHEVersion": "2.2.8",
-  "dateReleased": "2021-4-25",
+  "dateReleased": "2026-5-27",
   "drivers": [
     {
       "id": "05004575-ece9-41f4-85f5-70a48a2ca08e",
       "name": "Tailwind Garage Door Child Device",
-      "namespace": "dabtailwind-gd",
-      "location": "https://raw.githubusercontent.com/Gelix/HubitatTailwind/main/tailwinddriver-child.groovy",
+      "namespace": "drbbton",
+      "location": "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver-child.groovy",
       "required": true,
-      "version": "1.0.2"
+      "version": "2.0.0"
     },
     {
       "id": "98a5245c-42fd-4cb2-910b-dd6d83a67d42",
-      "name": "Tailwind Garage Door",
-      "namespace": "dabtailwind-gd",
-      "location": "https://raw.githubusercontent.com/Gelix/HubitatTailwind/main/tailwinddriver.groovy",
+      "name": "Hubitat Tailwind Garage Door 2.0",
+      "namespace": "drbbton",
+      "location": "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver.groovy",
       "required": true,
-      "version": "1.0.4"
+      "version": "2.0.0"
     }
   ],
-  "releaseNotes": "Official 9.95 firmware compability, incompatible with older BETA firmware.\nAdds support for contact switch to child doors"
+  "releaseNotes": "2.0.0: Migrated to /json API. Added real-time push notifications from device to hub, auto-registration of notify URL, and reboot command. Polling retained as fallback."
 }

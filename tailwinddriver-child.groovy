@@ -1,9 +1,9 @@
 metadata {
     definition (
         name: "Tailwind Garage Door Child Device", 
-		namespace: "dabtailwind-gd", 
-		author: "dbadge",
-        importUrl: "https://raw.githubusercontent.com/Gelix/HubitatTailwind/main/tailwinddriver-child.groovy"
+		namespace: "drbbton",
+		author: "drbbton",
+        importUrl: "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver-child.groovy"
     ) {
         capability "GarageDoorControl"
         capability "Actuator"
@@ -16,11 +16,11 @@ metadata {
 }
 
 void close(){
-    if(debugEnable) log.debug "Child says Door #${device.deviceNetworkId[-1].toInteger()} to Close"
-    parent.close(device.deviceNetworkId[-1].toInteger())   
+    log.debug "Child says Door #${device.deviceNetworkId[-1].toInteger()} to Close"
+    parent.close(device.deviceNetworkId[-1].toInteger())
 }
 
 void open(){
-    if(debugEnable) log.debug "Child says Door #${device.deviceNetworkId[-1].toInteger()} to Open"
-    parent.open(device.deviceNetworkId[-1].toInteger())   
+    log.debug "Child says Door #${device.deviceNetworkId[-1].toInteger()} to Open"
+    parent.open(device.deviceNetworkId[-1].toInteger())
 }
