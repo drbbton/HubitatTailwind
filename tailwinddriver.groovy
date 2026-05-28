@@ -110,6 +110,11 @@ void addChildren(){
         if (d == 3){dn = d3Name}
         if(debugEnable) log.debug ("${cName}:${d}")
         def cd = getChildDevice("${cName}:${d}")
+        if(cd && cd.typeName != "Hubitat Tailwind Garage Door 2.0 - Child") {
+            if(debugEnable) log.debug "Migrating child ${cd.deviceNetworkId} from '${cd.typeName}' to new driver"
+            deleteChildDevice("${cd.deviceNetworkId}")
+            cd = null
+        }
         if(!cd) {
             cd = addChildDevice("drbbton","Hubitat Tailwind Garage Door 2.0 - Child","${cName}:${d}", [label: "${cName} : ${dn}", name: "${d}", isComponent: true])
             if(cd && debugEnable){
