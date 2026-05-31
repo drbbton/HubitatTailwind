@@ -20,9 +20,11 @@ metadata {
         importUrl: "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver.groovy"
     ) {
         capability "Polling"
+        attribute "ledBrightness", "number"
         command "childOpen", ["integer"]
         command "childClose", ["integer"]
         command "reboot"
+        command "setLedBrightness", [[name: "brightness", type: "NUMBER", range: "0..100", description: "LED brightness (0-100)"]]
     }
 }
 
@@ -220,6 +222,8 @@ def checkStatus() {
             // API returns "close", normalize to "closed" to match Hubitat conventions
             doorStatuses << (s == "close" ? "closed" : s)
         }
+        def ledVal = respData?.led_brightness
+        if (ledVal != null) sendEvent(name: "ledBrightness", value: ledVal)
     }
     return doorStatuses ?: null
 }
@@ -265,6 +269,33 @@ def reboot() {
             log.info "Tailwind reboot initiated — device will be back in ~2 seconds"
         } else {
             log.warn "Reboot command failed: ${resp.data}"
+        }
+    }
+}
+
+def setLedBrightness(Number brightness) {
+    def brightnessInt = brightness.toInteger().clamp(0, 100)
+    log.info "Setting LED brightness to ${brightnessInt}"
+    def postParams = [
+        uri: "http://${IP}/json",
+        headers: ['TOKEN': "${token}"],
+        body: [
+            product: "iQ3",
+            version: "0.1",
+            data: [
+                type: "set",
+                name: "led_brightness",
+                value: brightnessInt
+            ]
+        ]
+    ]
+    httpPostJson(postParams) { resp ->
+        if(debugEnable) log.debug "Set LED brightness response: ${resp.data}"
+        if (resp.data?.result == "OK") {
+            sendEvent(name: "ledBrightness", value: brightnessInt)
+            log.info "LED brightness set to ${brightnessInt}"
+        } else {
+            log.warn "Failed to set LED brightness: ${resp.data}"
         }
     }
 }
