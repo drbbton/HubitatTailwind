@@ -222,8 +222,10 @@ def checkStatus() {
             // API returns "close", normalize to "closed" to match Hubitat conventions
             doorStatuses << (s == "close" ? "closed" : s)
         }
-        def ledVal = respData?.led_brightness
-        if (ledVal != null) sendEvent(name: "ledBrightness", value: ledVal)
+        // led_brightness appears at the top-level response, not nested under data
+        def ledVal = resp.data?.led_brightness ?: respData?.led_brightness
+        if(debugEnable) log.debug "LED brightness value: ${ledVal} (resp.data.led_brightness=${resp.data?.led_brightness}, respData.led_brightness=${respData?.led_brightness})"
+        if (ledVal != null) sendEvent(name: "ledBrightness", value: ledVal as Integer)
     }
     return doorStatuses ?: null
 }
@@ -274,7 +276,7 @@ def reboot() {
 }
 
 def setLedBrightness(Number brightness) {
-    def brightnessInt = brightness.toInteger().clamp(0, 100)
+    def brightnessInt = Math.max(0, Math.min(100, brightness.toInteger()))
     log.info "Setting LED brightness to ${brightnessInt}"
     def postParams = [
         uri: "http://${IP}/json",
