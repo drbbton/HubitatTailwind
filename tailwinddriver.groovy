@@ -286,19 +286,23 @@ def setLedBrightness(Number brightness) {
             version: "0.1",
             data: [
                 type: "set",
-                name: "led_brightness",
-                value: brightnessInt
+                name: "dev_cfg",
+                value: [led_brightness: brightnessInt]
             ]
         ]
     ]
-    httpPostJson(postParams) { resp ->
-        if(debugEnable) log.debug "Set LED brightness response: ${resp.data}"
-        if (resp.data?.result == "OK") {
-            sendEvent(name: "ledBrightness", value: brightnessInt)
-            log.info "LED brightness set to ${brightnessInt}"
-        } else {
-            log.warn "Failed to set LED brightness: ${resp.data}"
+    try {
+        httpPostJson(postParams) { resp ->
+            if(debugEnable) log.debug "Set LED brightness response: ${resp.data}"
+            if (resp.data?.result == "OK") {
+                sendEvent(name: "ledBrightness", value: brightnessInt)
+                log.info "LED brightness set to ${brightnessInt}"
+            } else {
+                log.warn "Failed to set LED brightness: ${resp.data}"
+            }
         }
+    } catch (groovyx.net.http.HttpResponseException e) {
+        log.error "LED brightness set failed — HTTP ${e.statusCode}: ${e.response?.data}"
     }
 }
 
