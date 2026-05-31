@@ -1,9 +1,9 @@
 {
   "packageName": "Hubitat Tailwind Garage Door 2.0",
   "author": "drbbton",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "minimumHEVersion": "2.2.8",
-  "dateReleased": "2026-5-27",
+  "dateReleased": "2026-5-31",
   "drivers": [
     {
       "id": "05004575-ece9-41f4-85f5-70a48a2ca08e",
@@ -11,7 +11,7 @@
       "namespace": "drbbton",
       "location": "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver-child.groovy",
       "required": true,
-      "version": "2.0.5"
+      "version": "2.0.6"
     },
     {
       "id": "98a5245c-42fd-4cb2-910b-dd6d83a67d42",
@@ -19,8 +19,8 @@
       "namespace": "drbbton",
       "location": "https://raw.githubusercontent.com/drbbton/HubitatTailwind/main/tailwinddriver.groovy",
       "required": true,
-      "version": "2.0.5"
+      "version": "2.0.6"
     }
   ],
-  "releaseNotes": "2.0.0: Migrated to /json API. Added real-time push notifications from device to hub, auto-registration of notify URL, and reboot command. Polling retained as fallback."
+  "releaseNotes": "2.0.6: Added LED brightness get/set support. 2.0.0: Migrated to /json API. Added real-time push notifications from device to hub, auto-registration of notify URL, and reboot command. Polling retained as fallback."
 }
